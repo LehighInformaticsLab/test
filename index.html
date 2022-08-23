@@ -1,0 +1,390 @@
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///Sphere test/// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+
+<html>
+
+<head>
+<title>Learning WebGL &mdash; lesson 2</title>
+
+<script type="text/javascript" src="3Dlessons/glMatrix-0.9.5.min.js"></script>
+
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+	
+<script id="shader-fs" type="x-shader/x-fragment">
+///////////////////////////////////////////////////////////////
+///FRAGMENT SHADER START
+///////////////////////////////////////////////////////////////
+	precision mediump float;
+
+	varying vec4 vColor;
+
+	void main(void) {
+		gl_FragColor = vColor;
+	}
+///////////////////////////////////////////////////////////////
+///FRAGMENT SHADER END
+///////////////////////////////////////////////////////////////
+</script>
+
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+	
+<script id="shader-vs" type="x-shader/x-vertex">
+///////////////////////////////////////////////////////////////
+///VERTEX SHADER START
+///////////////////////////////////////////////////////////////
+
+	///Attributes are inputs provided for each vertex,
+	///different for each vertex in the rendering call
+	attribute vec3 aVertexPosition;	//vertex position
+	attribute vec4 aVertexColor;		//vertex color
+
+	//Uniforms are inputs provided for ALL Vertices, 
+	//the same for all vertices in any rendering call
+	uniform mat4 uMVMatrix;			//?
+	uniform mat4 uPMatrix;			//?
+
+	//A Varying variable is an OUTPUT variable that is
+	//passed to the fragment shader.
+	varying vec4 vColor;			//the color of the vertex will be computed here.	
+
+	void main(void) {
+		gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+		vColor = aVertexColor;
+	}
+///////////////////////////////////////////////////////////////
+///VERTEX SHADER END
+///////////////////////////////////////////////////////////////
+</script>
+
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+
+<script type="text/javascript">
+/////////////////////////////////////////////
+///WebGL javascript
+/////////////////////////////////////////////
+	
+	/////////////////////////////////////
+	//This is the WebGL context, storing everything for the 
+	//stuff to be rendered, including 
+	//1) viewport dimensions
+	//2) fragment and vertex shaders
+	var gl;
+
+	///Construct the viewport.
+	function initGL(canvas) {
+		try {
+			gl = canvas.getContext("experimental-webgl");
+			gl.viewportWidth = canvas.width;
+			gl.viewportHeight = canvas.height;
+		} catch (e) {
+		}
+		if (!gl) {
+			alert("Could not initialise WebGL, sorry :-(");
+		}
+	}
+
+	/////////////////////////////////////////////////////////////////////////////
+	//Uses the HTML node of the shader code to 
+	//1) Extract the text of the shader code
+	//2) Extract the type of shader from the HTML node type
+	//3) Compile the shader
+	//4) output the compiled shader, or an error if there was a compilation error.
+	////This appears to need gl as an input so that it can call the compiler and 
+	////Create the shaders.
+	function getShader(gl, id) {
+		//Load the shader code by it's ID, as assigned in
+		//the script element (e.g. "shader-fs" or "shader-vs")
+		var shaderScript = document.getElementById(id);
+		if (!shaderScript) {
+			//If you don't find it, return null
+			//and let the consequences be as they may be.
+			return null;
+		}
+
+		///This is going to store the GLSL shader code that got loaded
+		///.firstChild is technically the html content of the node
+		///of an element, which is in this case the shader code, since 
+		///it's all wrapped into one big HTML script node.
+		var k = shaderScript.firstChild;
+		var str = "";
+		//While firstChild exists
+		while (k) {
+			///If the firstChild is a TEXT type document
+			if (k.nodeType == 3) {
+				//Append the text to str.
+				str += k.textContent;
+			}
+			//Continue with the 
+			k = k.nextSibling;
+		}
+
+		//Create the appropriate shader, using the information
+		//from the HTML node.
+		var shader;
+		if (shaderScript.type == "x-shader/x-fragment") {
+			shader = gl.createShader(gl.FRAGMENT_SHADER);
+		} else if (shaderScript.type == "x-shader/x-vertex") {
+			shader = gl.createShader(gl.VERTEX_SHADER);
+		} else {
+			return null;
+		}
+
+		//Now we have the type and the code, and we 
+		//provide it to openGL as such, then compile the shader code.
+		gl.shaderSource(shader, str);
+		gl.compileShader(shader);
+
+		//If the compilation of the shader code fails, report the error
+		//and return nothing, since the shader failed to compile.
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			alert(gl.getShaderInfoLog(shader));
+			return null;
+		}
+		
+		//If there were no errors in compilation, return the compiled shader.
+		return shader;
+    }
+
+
+	///////////////////////////////////
+	//This is a WebGLProgram, which holds a compiled vertex shader
+	//and a compiled fragment shader.
+	var shaderProgram;
+
+	///////////////////////////////////
+	//get the shaders and compile them
+	function initShaders() {
+		
+		///Retrieve and compile the shaders based on their HTML ids.
+		///Pass in the WebGL context, so that it can do this.
+		var fragmentShader = getShader(gl, "shader-fs");
+		var vertexShader = getShader(gl, "shader-vs");
+
+		//Create the program, then attach and link the two
+		//compiled shaders to the gl context
+		shaderProgram = gl.createProgram();
+		gl.attachShader(shaderProgram, vertexShader);
+		gl.attachShader(shaderProgram, fragmentShader);
+		gl.linkProgram(shaderProgram);
+
+		//Check for linker errors.
+		if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+			alert("Could not initialise shaders");
+		}
+
+		//This declares that the shaderprogram is now attached to the openGL context.
+		gl.useProgram(shaderProgram);
+
+		//Now we can assign the input data that was desclared in the vertex shader.
+		//shaderProgram.vertexPositionAttribute gets DECLARED HERE on shaderProgram AND ASSIGNED to the variable from the vertex shader
+		shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+		//Then we connect the array of vertices to the shader program, so that it uses all of them.
+		gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+		//A similar process can be done for vertex colors.
+		shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+		gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+
+		//here we store the uniform data.  Note that uniform data is globally applied to all vertices
+		//so we only need to pass it in, rather than have an attribute array.
+		shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+		shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+    }
+
+	
+	
+	///These variables point to buffers that hold the geometry
+	var triangleVertexPositionBuffer;
+	var triangleVertexColorBuffer;
+//	var squareVertexPositionBuffer;
+//	var squareVertexColorBuffer;
+	var sphereVertexPosBuffer;
+	var sphereVertexColBuffer;
+
+	//We will Generate the geometry with this function
+	function initBuffers() {
+
+		//////////////////////////////////////////////////////////////////////////////////////////
+		//Sphere
+		//////////////////////////////////////////////////////////////////////////////////////////
+		var sRadius = 1;
+		var slices = 25;
+		var stacks = 12;
+		var sVertices = [];
+		var count = 0;
+		var sColors = [];
+	
+		for(t = 0 ; t < stacks ; t++ ) // stacks are ELEVATION so they count theta
+		{
+			theta1 = ( (t)/stacks )*Math.PI;
+			theta2 = ( (t+1)/stacks )*Math.PI;
+
+			for( p = 0 ; p < slices ; p++ ) // slices are ORANGE SLICES so the count azimuth
+			{
+				phi = ( (p)/slices )*2*Math.PI ; // azimuth goes around 0 .. 2*PI
+
+				xVal = sRadius * Math.sin(phi) * Math.cos(theta1);
+				yVal = sRadius * Math.sin(phi) * Math.sin(theta1);
+				zVal = sRadius * Math.cos(phi);
+				sVertices = sVertices.concat([ xVal, yVal, zVal ]);
+
+				if( count % 3 == 0){ sColors = sColors.concat([.5, 0, 0, 1]); }
+				if( count % 3 == 1){ sColors = sColors.concat([ 0,.5, 0, 1]); }
+				if( count % 3 == 2){ sColors = sColors.concat([ 0, 0,.5, 1]); }
+				count++;
+				
+				xVal = sRadius * Math.sin(phi) * Math.cos(theta2);
+				yVal = sRadius * Math.sin(phi) * Math.sin(theta2);
+				zVal = sRadius * Math.cos(phi);
+				sVertices = sVertices.concat([ xVal, yVal, zVal ]);
+				
+				if( count % 3 == 0){ sColors = sColors.concat([.5, 0, 0, 1]); }
+				if( count % 3 == 1){ sColors = sColors.concat([ 0,.5, 0, 1]); }
+				if( count % 3 == 2){ sColors = sColors.concat([ 0, 0,.5, 1]); }
+				count++;
+
+			}
+		}
+		
+		//document.write(count);
+
+		sphereVertexPosBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexPosBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sVertices), gl.STATIC_DRAW);
+		sphereVertexPosBuffer.itemSize = 3;		//Each vertex is a position, xyz, so each one is size 3.
+		sphereVertexPosBuffer.numItems = stacks*(slices)*2;		//There are three corners of the triangle.
+
+		sphereVertexColBuffer = gl.createBuffer();			
+		gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexColBuffer);	//Tell webGL that we are working on this buffer now
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sColors), gl.STATIC_DRAW);
+		sphereVertexColBuffer.itemSize = 4;		//Each vertex is a position, xyz, so each one is size 3.
+		sphereVertexColBuffer.numItems = stacks*(slices)*2;		//There are three corners of the triangle.
+
+		//////////////////////////////////////////////////////////////////////////////////////////
+		//Sphere
+		//////////////////////////////////////////////////////////////////////////////////////////
+		
+		
+	}
+
+
+	
+	//Here we store the matrices we will use.
+	var mvMatrix = mat4.create();
+	var pMatrix = mat4.create();
+
+	//Here we connect the uniform matrices to the matrices we created.
+	function setMatrixUniforms() {
+		gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+		gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+	}
+
+
+
+	//This is the actual rendering command, that will be called
+	//each time we draw the frame.
+	function drawScene() {
+		//defines the viewport from 0 to width and height.
+		//If you resize the canvas (say on the browser) then you must call this again.
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+		//Clears data on the buffers: colors and depth buffers
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		//allocate a perspective matrix in pMatrix
+		mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+		//make sphere
+		
+		//allocate an identity matrix in mvMatrix
+		mat4.identity(mvMatrix);
+		//Add a translation into mvMatrix
+		mat4.translate(mvMatrix, [1, -1, -7.0]);
+
+		//////////////Load in Sphere Vertices
+		//Now we are working on the positions of vertices for the triangle
+		gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexPosBuffer);
+		//Specify the layout of the vertex position buffer for the triangle, using the attributes we defined
+		//in the shaderProgram (vertexPositionAttribute)
+		gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, sphereVertexPosBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		//////////////Load in Sphere Colors
+		//Now we are working on the colors for the triangle
+		gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexColBuffer);
+		//Specify the layout of the color array, using the attributes we defined
+		//in the shaderProgram (vertexColorAttribute)
+		gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, sphereVertexColBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		//set the matrix transforms 
+		setMatrixUniforms();
+		//draw the triangle (with triangles and colors loaded)
+		//document.write(sphereVertexPosBuffer.numItems);
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, sphereVertexPosBuffer.numItems);
+		
+	}
+
+
+	///////////////////////////////////////////////////////////////////////////////////
+	//Executive function starts everything.  This is like the main method.
+	function webGLStart() {
+		var canvas = document.getElementById("lesson02-canvas");
+
+//		canvas.width = document.body.clientWidth; //document.width is obsolete
+		canvas.width = window.innerWidth-20;
+//		canvas.height = document.body.clientHeight; //document.height is obsolete
+		canvas.height = window.innerHeight-20;
+//		canvasW = canvas.width;
+//		canvasH = canvas.height;
+		
+		//Create the GL viewport
+		initGL(canvas);
+		///Load the shaders and buffers into the GPU
+		initShaders();
+		initBuffers();
+
+		//Set the background color to opaque black
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		//Turn on depth comparisons and render only pixels in front.
+		gl.enable(gl.DEPTH_TEST);
+
+		//Begin rendering the scene
+		drawScene();
+	}
+
+	
+/////////////////////////////////////////////
+///WebGL javascript
+/////////////////////////////////////////////
+</script>
+
+</head>
+
+	
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––> 
+<!–– ///////////////////////////////////////////////////////////////////////////////////////////////////////////// ––>
+
+<body onload="webGLStart();">
+
+    <canvas id="lesson02-canvas" style="border: none;"  ></canvas>
+
+</body>
+
+</html>
